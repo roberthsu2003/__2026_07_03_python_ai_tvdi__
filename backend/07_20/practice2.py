@@ -6,9 +6,18 @@ app = FastAPI()
 
 
 @app.get("/")
-def read_root():
+def read_root(bureau:str | None = None):
     data:list[CameraPosition] = get_camera_position()
-    return data
+    if not bureau :        
+        return data
+    
+    bureau_datas:list[CameraPosition] = []
+    for camera in data:        
+        if camera.bureau == bureau:
+            bureau_datas.append(camera)
+        
+    return bureau_datas
+
 
 
 #@app.get("/items/{item_id}")
