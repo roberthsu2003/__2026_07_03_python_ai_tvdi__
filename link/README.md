@@ -18,3 +18,8 @@ https://youtube.com/live/iI35wAX5_Uw
 https://www.youtube.com/watch?v=Bjoob7oOGeQ
 
 ---
+
+## 2026_07_20_上午
+https://www.youtube.com/watch?v=yDrqKpTK1Es
+
+---
