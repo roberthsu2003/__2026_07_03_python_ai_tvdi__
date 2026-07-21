@@ -1,5 +1,5 @@
 import json
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 import uvicorn
 from pydantic import BaseModel,Field,field_validator
 from datetime import datetime
@@ -42,7 +42,10 @@ def read_root():
 
 @app.get("/county/{county_name}")
 def specific_county(county_name:str):
-    return [site for site in root.sites if county_name == site.county]
+    results = [site for site in root.sites if county_name == site.county]
+    if not results:
+        raise HTTPException(status_code=404, detail=f"找不到縣市「{county_name}」的空氣品質資料")
+    return results
     
 
 
