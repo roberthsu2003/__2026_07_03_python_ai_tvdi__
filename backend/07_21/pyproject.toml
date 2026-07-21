@@ -3,10 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "2026-07-03-python-ai-tvdi"
+name = "07_21"
 version = "0.1.0"
 description = "Add your description here"
-readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.139.0",
@@ -26,3 +25,5 @@ dev = [
     "basedpyright>=1.39.9",
     "jupyterlab-lsp>=5.3.0",
 ]
+[tool.fastapi]
+entrypoint = "practice2:app"
