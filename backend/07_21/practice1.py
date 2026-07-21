@@ -37,8 +37,13 @@ root = Root(sites=[AirSite(**item) for item in contents])
 
 
 @app.get("/")
-def read_root():
-    return root.sites
+def read_root(aqi_min:int|None=None, aqi_max:int|None=None):
+    results = root.sites
+    if aqi_min is not None:
+        results = [s for s in results if s.aqi >= aqi_min]
+    if aqi_max is not None:
+        results = [s for s in results if s.aqi <= aqi_max]
+    return results
 
 @app.get("/county/{county_name}")
 def specific_county(county_name:str):
