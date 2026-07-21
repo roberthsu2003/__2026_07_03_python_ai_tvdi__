@@ -16,7 +16,7 @@ resolution-markers = [
 [[package]]
 name = "2026-07-03-python-ai-tvdi"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "joblib" },
