@@ -30,4 +30,7 @@ https://www.youtube.com/watch?v=AQN0X8fCTtw
 ## 2026_07_21_上午
 https://www.youtube.com/watch?v=hbDYK2B5toA
 
+## 2026_07_21_下午
+https://www.youtube.com/watch?v=Wjl-Xu-6s_U
+
 ---
