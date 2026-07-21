@@ -40,6 +40,11 @@ root = Root(sites=[AirSite(**item) for item in contents])
 def read_root():
     return root.sites
 
+@app.get("/county/{county_name}")
+def specific_county(county_name:str):
+    return [site for site in root.sites if county_name == site.county]
+    
+
 
 # @app.get("/items/{item_id}")
 # def read_item(item_id: int, q: str | None = None):
