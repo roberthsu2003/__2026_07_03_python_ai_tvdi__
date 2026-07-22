@@ -22,6 +22,15 @@ from fastapi.responses import HTMLResponse  # 用於回傳 HTML 頁面
 
 
 # ---------------------------------------------------------------------------
+# 程式整體流程：
+# 1. 使用者從首頁輸入股票代碼與查詢期間。
+# 2. FastAPI 將輸入內容傳給 read_stock()。
+# 3. read_stock() 呼叫 get_stock_history() 到 Yahoo Finance 取得資料。
+# 4. 程式將資料整理成 JSON，回傳給瀏覽器或其他 API 使用者。
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
 # 建立 FastAPI 應用程式實例
 # ---------------------------------------------------------------------------
 # title / description / version 會顯示在 Swagger UI（/docs）頁面上
@@ -74,15 +83,18 @@ def get_stock_history(
     回傳：
         list[dict]: 每筆交易日的開盤價、最高價、最低價、收盤價與成交量
     """
-    # 台灣上市股票在 Yahoo Finance 的代碼格式為「代碼.TW」
+    # 台灣上市股票在 Yahoo Finance 的代碼格式為「代碼.TW」。
+    # 例如：使用者輸入 2330，實際查詢的代碼會變成 2330.TW。
     symbol = f"{stock_code}.TW"
 
-    # 透過 yfinance Ticker 物件取得歷史資料（回傳 pandas DataFrame）
+    # 建立股票物件，再使用 history() 取得歷史資料。
+    # 回傳結果是一個 pandas DataFrame，類似表格資料。
     history = yf.Ticker(symbol).history(period=period.value)
 
     # 將 DataFrame 的每一列轉換為 dict，方便 FastAPI 序列化為 JSON
     records: list[dict[str, object]] = []
     for date, row in history.iterrows():
+        # iterrows() 會逐筆讀取交易日期與該日的股價資料。
         records.append(
             {
                 "date": date.isoformat(),       # 日期轉為 ISO 8601 字串
@@ -156,18 +168,23 @@ def read_stock(
     ),
 ) -> dict[str, object]:
     """依股票代碼及指定期間回傳開、高、低、收與成交量。"""
+    # 先組合出 Yahoo Finance 使用的股票代碼，提供在回應中顯示。
     symbol = f"{stock_code}.TW"
 
-    # 嘗試取得股票資料；若 yfinance 發生錯誤（如網路中斷），回傳 502
+    # 嘗試取得股票資料。
+    # 若 yfinance 發生錯誤（例如網路中斷），回傳 HTTP 502，
+    # 表示伺服器暫時無法取得外部資料。
     try:
         data = get_stock_history(stock_code, period)
     except Exception as exc:
         raise HTTPException(status_code=502, detail="目前無法取得股票資料") from exc
 
-    # 若查詢結果為空（如代碼不存在或該期間無交易資料），回傳 404
+    # 若查詢結果為空（例如代碼不存在或該期間無交易資料），
+    # 回傳 HTTP 404，表示找不到資料。
     if not data:
         raise HTTPException(status_code=404, detail="查無股票資料")
 
+    # 將查詢條件、資料筆數與股價資料整理成 JSON 回應。
     # 回傳完整的查詢結果 JSON
     return {
         "stock_code": stock_code,         # 使用者輸入的股票代碼
