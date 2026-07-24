@@ -394,11 +394,16 @@ with gr.Blocks(
                     output_probs = gr.HTML(value=initial_pred_bars, label="機率分析")
             
             # 綁定即時變更事件 (Slider 變動時即時進行預測)
+            # 注意：此處刻意設定 queue=False。
+            # 預測僅是毫秒級的 CPU 運算，不需要佇列排程。若走 Gradio 佇列，結果會透過 SSE
+            # (Server-Sent Events) 長連線回傳；在 Render 這類會緩衝長連線的反向代理環境下，
+            # 拖動滑桿時每一格都得走「建立 SSE → 排隊 → 回傳 → 關閉」一輪，畫面會顯示
+            # `queue: 1/1` 且反應明顯延遲。改走一般 HTTP 請求即可恢復即時回饋。
             inputs = [sepal_len, sepal_wid, petal_len, petal_wid]
             outputs = [output_card, output_probs]
             for slider in inputs:
-                slider.change(fn=predict_gradio_handler, inputs=inputs, outputs=outputs)
-            predict_btn.click(fn=predict_gradio_handler, inputs=inputs, outputs=outputs)
+                slider.change(fn=predict_gradio_handler, inputs=inputs, outputs=outputs, queue=False)
+            predict_btn.click(fn=predict_gradio_handler, inputs=inputs, outputs=outputs, queue=False)
             
         # --- 分頁二：線上訓練 ---
         with gr.Tab("⚙️ 線上模型訓練與評估"):
@@ -427,6 +432,12 @@ with gr.Blocks(
 
 # 設定主題（避免 Gradio 6.0 的 Blocks 建構警告）
 demo.theme = gr.themes.Soft(primary_hue="teal", secondary_hue="indigo")
+
+# 放寬佇列的預設併發數：
+# Gradio 的 default_concurrency_limit 預設為 1，代表同一事件同時間只能有一個在執行，
+# 其餘請求全部排隊等待。訓練按鈕仍保留佇列（長時間工作需要進度回饋），
+# 但提高上限可避免多位使用者或連續操作時互相阻塞。
+demo.queue(default_concurrency_limit=10)
 
 # ==========================================
 # 4. 透過 Monkey-Patch 融合 Gradio 與自訂 API 路由
