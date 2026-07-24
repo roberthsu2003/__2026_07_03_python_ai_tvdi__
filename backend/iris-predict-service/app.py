@@ -14,35 +14,6 @@ import gradio as gr
 from pydantic import BaseModel, Field
 
 # ==========================================
-# ZeroGPU 啟動相容性設定 (針對 Hugging Face 免費版限制)
-# ==========================================
-# 背景說明：
-# Hugging Face 免費版 Gradio 空間強制要求使用 ZeroGPU 硬體，且啟動時會靜態掃描程式碼。
-# 若偵測不到最頂層的 `import spaces` 與 `@spaces.GPU` 裝飾器，會報錯 `No @spaces.GPU function detected` 並強行中斷。
-# 為了解決「本地執行無 spaces 套件會報錯」與「雲端強檢」的矛盾，採用動態 mock 模組注入機制。
-
-# 1. 本地與雲端相容性檢查：若本地未安裝 spaces 套件，則手動向 sys.modules 註冊 Mock 模組
-try:
-    import spaces
-except ImportError:
-    import types
-    # 建立一個假的 spaces 模組實例
-    fake_spaces = types.ModuleType("spaces")
-    # 定義一個無作用的 GPU 裝飾器（不改變原函數功能，直接回傳原函數）
-    fake_spaces.GPU = lambda func: func
-    # 將假的 spaces 模組註冊進 Python 載入模組清單中，防止後續 `import spaces` 拋出錯誤
-    sys.modules["spaces"] = fake_spaces
-
-# 2. 頂級導入 (Top-level Import)：必須置於最外層以通過 Hugging Face 的 AST 靜態語法掃描
-import spaces
-
-# 3. 虛擬 GPU 函數：專門用來滿足 Hugging Face 檢查器對 GPU 函數的掃描需求
-@spaces.GPU
-def dummy_gpu_function():
-    """此函數僅用於滿足 Hugging Face ZeroGPU 啟動時的檢測，不具備實際運算邏輯"""
-    return "GPU initialized"
-
-# ==========================================
 # 1. 載入模型與狀態管理
 # ==========================================
 model_path = os.path.join(current_dir, "iris_model.joblib")
@@ -82,7 +53,7 @@ load_model_state()
 # ==========================================
 # 2. 建立 FastAPI 應用與 Pydantic 格式定義
 # ==========================================
-app = FastAPI(
+api_app = FastAPI(
     title="Iris 鳶尾花機器學習服務 API",
     description="這是一個結合 FastAPI 與 Gradio 的機器學習部署服務。提供預測端點與線上訓練端點。",
     version="2.0.0",
@@ -139,7 +110,7 @@ class TrainResult(BaseModel):
 
 # --- FastAPI 路由端點 ---
 
-@app.post("/predict", response_model=IrisOutput)
+@api_app.post("/predict", response_model=IrisOutput)
 def predict_api(payload: IrisInput):
     """
     預測端點：接收鳶尾花的 4 項特徵，並回傳模型預測的類別與機率分佈。
@@ -171,7 +142,7 @@ def predict_api(payload: IrisInput):
         raise HTTPException(status_code=500, detail=f"預測失敗: {str(e)}")
 
 
-@app.post("/train", response_model=TrainResult)
+@api_app.post("/train", response_model=TrainResult)
 def train_api(config: TrainConfig):
     """
     訓練端點：傳入決策樹數量、最大深度、測試集比例等超參數，線上重新訓練模型，並即時更新服務所使用的模型。
@@ -454,66 +425,35 @@ demo.theme_hash = hashlib.sha256(demo.theme_css.encode("utf-8")).hexdigest()
 demo.queue(default_concurrency_limit=10)
 
 # ==========================================
-# 4. 透過 Monkey-Patch 融合 Gradio 與自訂 API 路由
+# 4. 融合 Gradio 與自訂 API 路由
 # ==========================================
-# 背景說明：
-# Hugging Face ZeroGPU 必須透過 Gradio 內建的 `demo.launch()` 啟動，才能與雲端代理伺服器完成網路握手。
-# 但 `demo.launch()` 每次呼叫時，都會在內部重新執行 `gr.routes.App.create_app(demo)` 來重建 FastAPI 實例。
-# 這會導致我們在外部對 `demo.app` 進行的 any 路由合併 (Include Router) 或 Swagger 修改全被覆蓋抹除。
-# 
-# 為此，我們在此對 `gr.routes.App.create_app` 進行「猴子補丁 (Monkey-Patch)」：
-# 確保無論是手動呼叫，還是 `demo.launch()` 內部重建，產生的 FastAPI 實例都會自動包含我們的自訂 API 和重啟的 Swagger！
+# 本地與 Render 皆以 uvicorn 載入 "app:app"，不經過 `demo.launch()`，
+# 因此只需在建立 Gradio 的 FastAPI 實例後，直接併入自訂路由即可，
+# 無需針對 launch() 內部重建 app 的猴子補丁 (Monkey-Patch)。
 
-# 1. 備份原始的 create_app 函數
-original_create_app = gr.routes.App.create_app
-
-# 2. 定義補丁函數
-def patched_create_app(*args, **kwargs):
-    # 呼叫原始函數，產生乾淨的 Gradio FastAPI 應用實例
-    app_instance = original_create_app(*args, **kwargs)
-    
-    # 合併 API 路由：將我們自己定義在 `app` 中的所有 API 路由 (/predict, /train 等) 併入該實例
-    app_instance.include_router(app.router)
-    
-    # 顯式註冊被 Gradio 隱藏的 Swagger UI 與 openapi.json，優先於其萬用路由攔截
-    @app_instance.get("/docs", include_in_schema=False)
-    async def custom_swagger_ui_html():
-        return get_swagger_ui_html(
-            openapi_url="/openapi.json",
-            title="Iris API - Swagger UI"
-        )
-
-    @app_instance.get("/openapi.json", include_in_schema=False)
-    async def get_openapi_json():
-        return app_instance.openapi()
-        
-    return app_instance
-
-# 3. 套用猴子補丁
-gr.routes.App.create_app = patched_create_app
-
-# 4. 初始化全域變數 app：
-# 為了讓本地端的 Uvicorn (以 "app:app" 載入時) 能直接取得已經合併好 API 和 UI 資源的應用實例，
-# 我們在此手動執行一次 create_app，並賦值給全域變數 `app`。
+# 1. 產生 Gradio 的 FastAPI 應用實例
 app = gr.routes.App.create_app(demo)
 
+# 2. 合併 API 路由：將 api_app 中的所有自訂 API 路由 (/predict, /train) 併入
+app.include_router(api_app.router)
+
+# 3. 顯式註冊被 Gradio 萬用路由隱藏的 Swagger UI 與 openapi.json
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="Iris API - Swagger UI"
+    )
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_openapi_json():
+    return app.openapi()
+
 if __name__ == "__main__":
-    # 偵測是否運行於 Hugging Face Spaces 環境
-    is_hf = os.environ.get("SYSTEM") == "spaces"
-    
-    if is_hf:
-        print("偵測到為 Hugging Face Spaces 雲端環境，使用 Gradio 官方 launch() 啟動以相容 ZeroGPU 端口轉發與生命週期...")
-        # ⚠️ 必須將 ssr_mode 設為 False！
-        # 在 Gradio 5/6 中，預設啟用的 SSR 模式會另外啟動一個 Node.js 代理伺服器來攔截請求，
-        # 這會導致我們自訂的 FastAPI /docs、/predict、/train 等 API 端點被 Node.js 阻擋或劫持。
-        # 關閉 ssr_mode 後，伺服器會由 Python 直接處理 7860 端口的所有流量，使 Swagger UI 與 API 順利開通。
-        demo.launch(
-            server_name="0.0.0.0",
-            server_port=7860,
-            prevent_thread_lock=False,
-            ssr_mode=False
-        )
-    else:
-        import uvicorn
-        print("偵測到為本地開發環境，使用 uvicorn 啟動以支援熱重載 (Reload)...")
-        uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    import uvicorn
+    # Render 會透過 PORT 環境變數指定對外埠號；本地開發預設 8000
+    port = int(os.environ.get("PORT", 8000))
+    # 本地開發可設定環境變數 RELOAD=true 啟用熱重載；Render 生產環境維持關閉
+    reload = os.environ.get("RELOAD", "").lower() == "true"
+    print(f"使用 uvicorn 啟動伺服器 (port={port}, reload={reload})...")
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=reload)
