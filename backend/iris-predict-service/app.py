@@ -433,6 +433,20 @@ with gr.Blocks(
 # 設定主題（避免 Gradio 6.0 的 Blocks 建構警告）
 demo.theme = gr.themes.Soft(primary_hue="teal", secondary_hue="indigo")
 
+# ⚠️ 指派 demo.theme 之後，必須手動補算主題的 CSS 與雜湊值！
+# Gradio 只在 `demo.launch()` 內部才會產生 `theme_css` / `theme_hash` / `stylesheets`
+# 這三個屬性。若像本專案一樣改用 uvicorn 直接載入 app（完全不經過 launch()），
+# 它們永遠不會被建立，後果是：
+#   1. config 中的 theme_hash 為 None，前端因此請求 `/theme.css?v=null`
+#   2. `/theme.css` 路由存取 `blocks.theme_css` 時拋出 AttributeError → HTTP 500
+#   3. 瀏覽器拿不到主題樣式，整個 UI 退化成無樣式的原生 HTML
+#      （滑桿變成數字、Tab 變成純文字；但 inline style 寫死的自訂卡片仍正常顯示）
+import hashlib
+
+demo.theme_css = demo.theme._get_theme_css()
+demo.stylesheets = demo.theme._stylesheets
+demo.theme_hash = hashlib.sha256(demo.theme_css.encode("utf-8")).hexdigest()
+
 # 放寬佇列的預設併發數：
 # Gradio 的 default_concurrency_limit 預設為 1，代表同一事件同時間只能有一個在執行，
 # 其餘請求全部排隊等待。訓練按鈕仍保留佇列（長時間工作需要進度回饋），
