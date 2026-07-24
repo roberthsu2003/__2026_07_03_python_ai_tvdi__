@@ -491,4 +491,4 @@ if __name__ == "__main__":
     else:
         import uvicorn
         print("偵測到為本地開發環境，使用 uvicorn 啟動以支援熱重載 (Reload)...")
-        uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+        uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
