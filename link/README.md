@@ -50,3 +50,8 @@ https://www.youtube.com/watch?v=B1klA4HukbY
 https://www.youtube.com/watch?v=DLgdP5J7AA4
 
 ---
+
+## 2026_07_31_上午
+https://www.youtube.com/watch?v=7ktaJXyU2BY
+
+---
