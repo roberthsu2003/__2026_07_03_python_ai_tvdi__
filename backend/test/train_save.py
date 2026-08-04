@@ -126,6 +126,7 @@ def train_and_save_model(
         "r2": float(r2),
         "coef": [float(c) for c in coefs],
         "intercept": float(intercept),
+        "feature_coefs": feature_coefs,
         "model_type": model_type_clean,
         "alpha": float(alpha),
         "train_time": float(train_time),

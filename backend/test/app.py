@@ -5,6 +5,8 @@ from pydantic import BaseModel,Field
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder, StandardScaler
+from train_save import train_and_save_model
+import gradio as gr
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -22,7 +24,6 @@ def load_model_state():
     if not os.path.exists(model_path):
         print("未檢測到模型檔案，正在自動執行訓練以生成 salary_model.joblib...")
         try:
-            from train_save import train_and_save_model
             train_and_save_model()
         except Exception as e:
             raise RuntimeError(f"自動訓練模型失敗: {str(e)}")
@@ -82,6 +83,23 @@ class SalaryOutput(BaseModel):
     predicted_salary: float = Field(..., description="預測月薪 (k / 千元)")
     estimated_annual_salary: float = Field(..., description="估計年薪 (k / 千元，以 14 個月估算)")
 
+class TrainConfig(BaseModel):
+    test_size: float = Field(0.2, description="測試集分割比例", ge=0.1, le=0.5)
+    random_state: int = Field(76, description="隨機種子", ge=0)
+    model_type:str = Field("LinearRegression", description="模型演算法類型 (LinearRegression, Lasso, Ridge)")
+    alpha:float = Field(1.0, description="正則化強度 alpha (適用於 Lasso 與 Ridge)", ge=0.001, le=100.0)
+
+class TrainResult(BaseModel):
+    status: str = Field(..., description="執行結果狀態")
+    r2: float = Field(..., description="測試集 R-squared 決定係數")
+    coef: list[float] = Field(..., description="特徵權重係數列表")
+    intercept: float = Field(..., description="截距")
+    feature_coefs:dict[str, float] = Field(..., description="特徵及其權重映射")
+    model_type: str = Field(..., description="模型演算法類型")
+    alpha: float = Field(..., description="正則化強度 alpha")
+    train_time: float = Field(..., description="訓練耗時 (秒)")
+    message: str = Field(..., description="提示訊息")
+
 @api_app.post("/predict",response_model=SalaryOutput)
 def predict_api(payload:SalaryInput):
     """
@@ -128,11 +146,58 @@ def predict_api(payload:SalaryInput):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"預測失敗:{str(e)}")
 
+@api_app.post("/train", response_model=TrainResult)
+def train_endpoint(config:TrainConfig):
+    """
+    訓練端點：傳入測試集比例、隨機種子、模型類型與 alpha，線上重新訓練模型，並即時更新服務所使用的模型。
+    """
+    try:
+        res = train_and_save_model(
+            test_size = config.test_size,
+            random_state = config.random_state,
+            model_type = config.model_type,
+            alpha = config.alpha
+        )
+        load_model_state()
 
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"線上訓練失敗:{str(e)}")
+   
+# --- 建立 Gradio UI Blocks 布局 ---
+with gr.Blocks(
+    title="💼 薪資預測多元線性迴歸平台"
+) as demo:
+    gr.Markdown(
+        """
+        # 💼 薪資預測多元線性迴歸教學與部署平台
+        本系統展示了機器學習模型部署的**完整生命週期**。此服務底層使用 **FastAPI** 驅動，提供標準化 RESTful API，並結合 **Gradio** 開發了互動式 Web 介面。
+        * 🔮 **即時預測分頁**：輸入您的工作年資、學歷與工作城市，即時透過多元線性迴歸模型取得月薪與年薪估計。
+        * ⚙️ **線上訓練與公式分頁**：可線上調整測試集切分比例與隨機種子，即時訓練模型，並動態展示擬合後的**數學迴歸方程式**與特徵權重係數。
+        """
+    )
+# ==========================================
+# 4. 融合 Gradio 與自訂 API 路由
+# ==========================================
 
+# 1. 產生 Gradio 的 FastAPI 應用實例
+#    (Gradio 預設停用 docs_url，透過 app_kwargs 重新啟用 Swagger UI)
+app = gr.routes.App.create_app(demo, app_kwargs={"docs_url": "/docs"})
 
+# 2. 合併 API 路由：將 api_app 中的所有自訂 API 路由 (/predict, /train) 併入
+app.include_router(api_app.router)
 
 
 if __name__ == "__main__":
-    load_model_state()
+    import uvicorn
+    # Render 會透過 PORT 環境變數指定對外埠號；本地開發預設 8000
+    port = int(os.environ.get("PORT", 8000))
+    # 本地開發可設定環境變數 RELOAD=true 啟用熱重載；Render 生產環境維持關閉
+    reload = os.environ.get("RELOAD", "").lower() == "true"
+    print(f"使用 uvicorn 啟動伺服器 (port={port}, reload={reload})...")
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=reload)
+
+
+
+
 
