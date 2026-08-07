@@ -60,7 +60,7 @@ https://www.youtube.com/watch?v=xqfuFnYcHRs
 ---
 
 ## 2026_08_07_上午
-https://meet.google.com/zaj-dyxf-ytx
+https://youtube.com/live/z-en2Y994OY
 
 ## 2026_08_07_下午
 https://www.youtube.com/watch?v=wnS5WjnsN8o
