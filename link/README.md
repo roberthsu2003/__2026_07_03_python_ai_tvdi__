@@ -58,3 +58,9 @@ https://www.youtube.com/watch?v=7ktaJXyU2BY
 https://www.youtube.com/watch?v=xqfuFnYcHRs
 
 ---
+
+## 2026_08_07_上午
+https://meet.google.com/zaj-dyxf-ytx
+
+
+---
