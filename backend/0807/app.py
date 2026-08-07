@@ -6,6 +6,8 @@ from pprint import pprint
 import joblib
 from fastapi import FastAPI,HTTPException
 import uvicorn
+import pandas as pd
+import numpy as np
 
 
 current_dir = os.getcwd()
@@ -32,6 +34,16 @@ class TrainResult(BaseModel):
     alpha: float = Field(..., description="正則化強度 alpha")
     train_time: float = Field(..., description="訓練耗時 (秒)")
     message:str = Field(..., description="提示訊息")
+
+class SalaryInput(BaseModel):
+    years_experience: float = Field(..., ge=0.0, le=50.0)
+    education_level:str
+    city: str
+
+class SalaryOutput(BaseModel):
+    predicted_salary: float
+    estimated_annual_salary: float
+    
 
 def load_model_state():
     global MODEL_STATE
@@ -76,6 +88,25 @@ def train_endpoint(config:TrainConfig):
         raise HTTPException(status_code=500, detail=f"線上訓練失敗: {str(e)}")
 
     return res
+
+@app.post("/predict", response_model=SalaryOutput)
+def predict_endpoint(payload:SalaryInput):
+    oe = MODEL_STATE["oe"]
+    ohe = MODEL_STATE["ohe"]
+    scaler = MODEL_STATE["scaler"]
+    model = MODEL_STATE["model"]
+
+    edu_encoded = int(oe.transform(pd.DataFrame([[payload.education_level]], columns=["EducationLevel"]))[0][0])
+    city_vector = ohe.transform(pd.DataFrame([[payload.city]], columns=["City"]))
+    city_cols = ohe.get_feature_names_out(['City'])
+    feature_row = [payload.years_experience, edu_encoded] + list(city_vector[0])
+    features = pd.DataFrame([feature_row],columns=["YearsExperience", "EducationLevel"] + list(city_cols))
+    X_scaled = scaler.transform(features)
+    predicted_salary = float(model.predict(X_scaled)[0])
+    return SalaryOutput(
+        predicted_salary=predicted_salary,
+        estimated_annual_salary= predicted_salary * 14
+    )
     
 if __name__ == "__main__":
     uvicorn.run("app:app", reload=True)
